@@ -22,6 +22,9 @@ function App() {
   const [errors, setErrors] = useState({});
   const [notice, setNotice] = useState('');
   const noticeTimer = useRef(null);
+  const submitTimers = useRef([]);
+  const emailRef = useRef(null);
+  const passwordRef = useRef(null);
 
   const isEmailValid = emailPattern.test(email);
   const passwordActive = focusedField === 'password' && submitState === 'idle';
@@ -33,11 +36,22 @@ function App() {
     }
 
     setPeekPassword(false);
-    const timer = window.setTimeout(() => setPeekPassword(true), 1050);
-    return () => window.clearTimeout(timer);
+    let coverTimer;
+    const peekTimer = window.setTimeout(() => {
+      setPeekPassword(true);
+      coverTimer = window.setTimeout(() => setPeekPassword(false), 850);
+    }, 950);
+
+    return () => {
+      window.clearTimeout(peekTimer);
+      window.clearTimeout(coverTimer);
+    };
   }, [password, passwordActive, showPassword]);
 
-  useEffect(() => () => window.clearTimeout(noticeTimer.current), []);
+  useEffect(() => () => {
+    window.clearTimeout(noticeTimer.current);
+    submitTimers.current.forEach((timer) => window.clearTimeout(timer));
+  }, []);
 
   useEffect(() => {
     const updatePageVisibility = () => {
@@ -68,22 +82,33 @@ function App() {
     if (!password) nextErrors.password = 'Your secret word is still hiding.';
     else if (password.length < 6) nextErrors.password = 'Use at least 6 characters, sweet and safe.';
     setErrors(nextErrors);
-    return Object.keys(nextErrors).length === 0;
+    return nextErrors;
   };
 
   const handleSubmit = (event) => {
     event.preventDefault();
-    if (submitState !== 'idle' || !validate()) return;
+    if (submitState !== 'idle') return;
+
+    const nextErrors = validate();
+    if (Object.keys(nextErrors).length > 0) {
+      const firstInvalidField = nextErrors.email ? emailRef : passwordRef;
+      window.requestAnimationFrame(() => firstInvalidField.current?.focus());
+      return;
+    }
 
     document.activeElement?.blur();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
     setFocusedField(null);
     setSubmitState('submitting');
-    window.setTimeout(() => setSubmitState('success'), 1150);
-    window.setTimeout(() => {
-      setSubmitState('idle');
-      showNotice('Demo complete — welcome to your little daydream!');
-    }, 3400);
+    submitTimers.current.forEach((timer) => window.clearTimeout(timer));
+    submitTimers.current = [
+      window.setTimeout(() => setSubmitState('success'), 1150),
+      window.setTimeout(() => {
+        setSubmitState('idle');
+        showNotice('Demo complete — welcome to your little daydream!');
+      }, 3400),
+    ];
   };
 
   const handleEmailChange = (event) => {
@@ -139,10 +164,13 @@ function App() {
                 <span className="input-icon"><MailIcon /></span>
                 <input
                   id="email"
+                  ref={emailRef}
                   name="email"
                   type="email"
                   inputMode="email"
                   autoComplete="username"
+                  required
+                  aria-required="true"
                   placeholder="hello@daydream.com"
                   value={email}
                   onChange={handleEmailChange}
@@ -153,26 +181,32 @@ function App() {
                 />
                 {isEmailValid && <span className="valid-dot" aria-label="Valid email">✓</span>}
               </div>
-              {errors.email && <p className="field-error" id="email-error">{errors.email}</p>}
+              {errors.email && <p className="field-error" id="email-error" role="alert">{errors.email}</p>}
             </div>
 
-            <div className={`field-group ${errors.password ? 'has-error' : ''}`}>
+            <div className={`field-group password-group ${errors.password ? 'has-error' : ''}`}>
               <div className="label-row">
                 <label htmlFor="password">Password</label>
-                <button type="button" className="text-link" onClick={() => showNotice('Password reset is ready to connect.')}>Forgot?</button>
               </div>
-              <div className={`input-wrap ${focusedField === 'password' ? 'is-focused' : ''}`}>
+              <div
+                className={`input-wrap ${focusedField === 'password' ? 'is-focused' : ''}`}
+                onFocus={() => setFocusedField('password')}
+                onBlur={(event) => {
+                  if (!event.currentTarget.contains(event.relatedTarget)) setFocusedField(null);
+                }}
+              >
                 <span className="input-icon"><LockIcon /></span>
                 <input
                   id="password"
+                  ref={passwordRef}
                   name="password"
                   type={showPassword ? 'text' : 'password'}
                   autoComplete="current-password"
+                  required
+                  aria-required="true"
                   placeholder="Your secret word"
                   value={password}
                   onChange={handlePasswordChange}
-                  onFocus={() => setFocusedField('password')}
-                  onBlur={() => setFocusedField(null)}
                   aria-invalid={Boolean(errors.password)}
                   aria-describedby={errors.password ? 'password-error' : undefined}
                 />
@@ -186,7 +220,8 @@ function App() {
                   <EyeIcon open={showPassword} />
                 </button>
               </div>
-              {errors.password && <p className="field-error" id="password-error">{errors.password}</p>}
+              <button type="button" className="text-link" onClick={() => showNotice('Password reset is ready to connect.')}>Forgot?</button>
+              {errors.password && <p className="field-error" id="password-error" role="alert">{errors.password}</p>}
             </div>
 
             <button className="login-button" type="submit" disabled={submitState !== 'idle'}>
